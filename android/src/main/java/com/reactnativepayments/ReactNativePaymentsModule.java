@@ -17,11 +17,13 @@ import com.facebook.react.bridge.ReactBridge;
 import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.ReadableMapKeySetIterator;
 import com.google.android.gms.common.api.GoogleApiClient;
-import com.google.android.gms.common.api.BooleanResult;
-import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.common.api.Status;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.identity.intents.model.UserAddress;
 import com.google.android.gms.wallet.*;
+import com.google.android.gms.tasks.Task;
+import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.common.api.ApiException;
 
 import com.facebook.react.bridge.ActivityEventListener;
 import com.facebook.react.bridge.BaseActivityEventListener;
@@ -33,7 +35,11 @@ import com.facebook.react.bridge.WritableNativeArray;
 import com.facebook.react.bridge.WritableNativeMap;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,8 +47,9 @@ import java.util.Map;
 public class ReactNativePaymentsModule extends ReactContextBaseJavaModule implements GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
     private static final int LOAD_MASKED_WALLET_REQUEST_CODE = 88;
     private static final int LOAD_FULL_WALLET_REQUEST_CODE = 89;
+    private static final int LOAD_PAYMENT_DATA_REQUEST_CODE = 90;
 
-
+    private PaymentsClient paymentClient = null;
     // Google API Client
     private GoogleApiClient mGoogleApiClient = null;
 
@@ -72,8 +79,8 @@ public class ReactNativePaymentsModule extends ReactContextBaseJavaModule implem
                                 MaskedWallet maskedWallet =
                                         data.getParcelableExtra(WalletConstants.EXTRA_MASKED_WALLET);
 
-                                Log.i(REACT_CLASS, "ANDROID PAY SUCCESS" + maskedWallet.getEmail());
-                                Log.i(REACT_CLASS, "ANDROID PAY SUCCESS" + buildAddressFromUserAddress(maskedWallet.getBuyerBillingAddress()));
+                              //  Log.i(REACT_CLASS, "ANDROID PAY SUCCESS" + maskedWallet.getEmail());
+                              //  Log.i(REACT_CLASS, "ANDROID PAY SUCCESS" + buildAddressFromUserAddress(maskedWallet.getBuyerBillingAddress()));
 
                                 UserAddress userAddress = maskedWallet.getBuyerShippingAddress();
                                 WritableNativeMap shippingAddress = userAddress != null
@@ -96,7 +103,7 @@ public class ReactNativePaymentsModule extends ReactContextBaseJavaModule implem
 
                             break;
                         default:
-                            Log.i(REACT_CLASS, "ANDROID PAY ERROR? " + errorCode);
+                          //  Log.i(REACT_CLASS, "ANDROID PAY ERROR? " + errorCode);
                             mShowErrorCallback.invoke(errorCode);
 
                             break;
@@ -106,17 +113,46 @@ public class ReactNativePaymentsModule extends ReactContextBaseJavaModule implem
                     if (resultCode == Activity.RESULT_OK && data != null) {
                         FullWallet fullWallet = data.getParcelableExtra(WalletConstants.EXTRA_FULL_WALLET);
                         String tokenJSON = fullWallet.getPaymentMethodToken().getToken();
-                        Log.i(REACT_CLASS, "FULL WALLET SUCCESS" + tokenJSON);
+                       // Log.i(REACT_CLASS, "FULL WALLET SUCCESS" + tokenJSON);
 
                         mGetFullWalletSuccessCallback.invoke(tokenJSON);
                     } else {
-                        Log.i(REACT_CLASS, "FULL WALLET FAILURE");
+                      //  Log.i(REACT_CLASS, "FULL WALLET FAILURE");
                         mGetFullWalletErrorCallback.invoke();
                     }
                 case WalletConstants.RESULT_ERROR:activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
 //                    handleError(errorCode);
                     break;
+                case LOAD_PAYMENT_DATA_REQUEST_CODE:
+                    switch (resultCode) {
+                        case Activity.RESULT_OK:
+                            PaymentData paymentData = PaymentData.getFromIntent(data);
+                            String token = paymentData.getPaymentMethodToken().getToken();
+                            
+                            WritableNativeMap paymentDetails = new WritableNativeMap();
+                                paymentDetails.putString("paymentDescription", "");
+                                paymentDetails.putString("payerEmail", "");
+                                paymentDetails.putMap("shippingAddress", new WritableNativeMap());
+                                paymentDetails.putString("googleTransactionId", "");
+                                paymentDetails.putString("paymentData", token);
 
+                            // mShowSuccessCallback.invoke(token);
+                            sendEvent(reactContext, "NativePayments:onuseraccept", paymentDetails);
+                            break;
+                        case Activity.RESULT_CANCELED:
+                            sendEvent(reactContext, "NativePayments:onuserdismiss", null);
+                            break;
+                        case AutoResolveHelper.RESULT_ERROR:
+                            Status status = AutoResolveHelper.getStatusFromIntent(data);
+                            // Log the status for debugging.
+                            // Generally, there is no need to show an error to
+                            // the user as the Google Payment API will do that.
+                            mShowErrorCallback.invoke(errorCode);
+                            break;
+                        default:
+                            // Do nothing.
+                    }
+                    break;
                 default:
                     super.onActivityResult(requestCode, resultCode, data);
                     break;
@@ -154,27 +190,31 @@ public class ReactNativePaymentsModule extends ReactContextBaseJavaModule implem
     public void canMakePayments(ReadableMap paymentMethodData, Callback errorCallback, Callback successCallback) {
         final Callback callback = successCallback;
         IsReadyToPayRequest req = IsReadyToPayRequest.newBuilder()
-                .addAllowedCardNetwork(WalletConstants.CardNetwork.MASTERCARD)
-                .addAllowedCardNetwork(WalletConstants.CardNetwork.VISA)
+                .addAllowedCardNetwork(WalletConstants.CARD_NETWORK_VISA)
+                .addAllowedCardNetwork(WalletConstants.CARD_NETWORK_MASTERCARD)
                 .build();
 
         int environment = getEnvironmentFromPaymentMethodData(paymentMethodData);
-        if (mGoogleApiClient == null) {
-            buildGoogleApiClient(getCurrentActivity(), environment);
+        if (paymentClient == null) {
+            buildPaymentClient(getCurrentActivity(), environment);
         }
 
-        Wallet.Payments.isReadyToPay(mGoogleApiClient, req)
-                .setResultCallback(new ResultCallback<BooleanResult>() {
-                    @Override
-                    public void onResult(@NonNull BooleanResult booleanResult) {
-                        callback.invoke(booleanResult.getValue());
+        Task<Boolean> task = paymentClient.isReadyToPay(req);
+        task.addOnCompleteListener(
+                new OnCompleteListener<Boolean>() {
+                    public void onComplete(Task<Boolean> task) {
+                        try {
+                            boolean result = task.getResult(
+                                    ApiException.class);
+                            callback.invoke(result);
+                        } catch (ApiException exception) {
+                        }
                     }
                 });
     }
 
     @ReactMethod
     public void abort(Callback errorCallback, Callback successCallback) {
-        Log.i(REACT_CLASS, "ANDROID PAY ABORT" + getCurrentActivity().toString());
         successCallback.invoke();
     }
 
@@ -189,31 +229,52 @@ public class ReactNativePaymentsModule extends ReactContextBaseJavaModule implem
         mShowSuccessCallback = successCallback;
         mShowErrorCallback = errorCallback;
 
-        Log.i(REACT_CLASS, "ANDROID PAY SHOW" + options);
-
-        Boolean shouldRequestShipping = options.hasKey("requestShipping") && options.getBoolean("requestShipping")
-                        || options.hasKey("requestPayerName") && options.getBoolean("requestPayerName")
-                        || options.hasKey("requestPayerPhone") && options.getBoolean("requestPayerPhone");
-        Boolean shouldRequestPayerPhone = options.hasKey("requestPayerPhone") && options.getBoolean("requestPayerPhone");
+        ReadableMap total = details.getMap("total").getMap("amount");
+        PaymentDataRequest.Builder request =
+                PaymentDataRequest.newBuilder()
+                        .setTransactionInfo(
+                                TransactionInfo.newBuilder()
+                                        .setTotalPriceStatus(WalletConstants.TOTAL_PRICE_STATUS_FINAL)
+                                        .setTotalPrice(total.getString("value"))
+                                        .setCurrencyCode(total.getString("currency"))
+                                        .build())
+                        .addAllowedPaymentMethod(WalletConstants.PAYMENT_METHOD_CARD)
+                    //    .addAllowedPaymentMethod(WalletConstants.PAYMENT_METHOD_TOKENIZED_CARD)
+                        .setCardRequirements(
+                                CardRequirements.newBuilder()
+                                        .addAllowedCardNetworks(
+                                                Arrays.asList(
+                                                        WalletConstants.CARD_NETWORK_VISA,
+                                                        WalletConstants.CARD_NETWORK_MASTERCARD))
+                                        .build());
 
         final PaymentMethodTokenizationParameters parameters = buildTokenizationParametersFromPaymentMethodData(paymentMethodData);
 
-        // TODO: clean up MaskedWalletRequest
-        ReadableMap total = details.getMap("total").getMap("amount");
-        final MaskedWalletRequest maskedWalletRequest = MaskedWalletRequest.newBuilder()
-                .setPaymentMethodTokenizationParameters(parameters)
-                .setPhoneNumberRequired(shouldRequestPayerPhone)
-                .setShippingAddressRequired(shouldRequestShipping)
-                .setEstimatedTotalPrice(total.getString("value"))
-                .setCurrencyCode(total.getString("currency"))
-                .build();
+        request.setPaymentMethodTokenizationParameters(parameters);
 
         int environment = getEnvironmentFromPaymentMethodData(paymentMethodData);
-        if (mGoogleApiClient == null) {
-            buildGoogleApiClient(getCurrentActivity(), environment);
+        if (paymentClient == null) {
+            buildPaymentClient(getCurrentActivity(), getEnvironmentFromPaymentMethodData(paymentMethodData));
         }
 
-        Wallet.Payments.loadMaskedWallet(mGoogleApiClient, maskedWalletRequest, LOAD_MASKED_WALLET_REQUEST_CODE);
+        if (request != null) {
+            AutoResolveHelper.resolveTask(
+                    paymentClient.loadPaymentData(request.build()),
+                    getCurrentActivity(),
+                    LOAD_PAYMENT_DATA_REQUEST_CODE);
+
+        }
+    }
+
+    // Payment Client
+    // ---------------------------------------------------------------------------------------------
+    private void buildPaymentClient(Activity currentActivity, int environment) {
+        paymentClient =
+                Wallet.getPaymentsClient(
+                        currentActivity,
+                        new Wallet.WalletOptions.Builder()
+                                .setEnvironment(environment)
+                                .build());
     }
 
     @ReactMethod
@@ -228,7 +289,6 @@ public class ReactNativePaymentsModule extends ReactContextBaseJavaModule implem
         mGetFullWalletErrorCallback = errorCallback;
 
         ReadableMap total = details.getMap("total").getMap("amount");
-        Log.i(REACT_CLASS, "ANDROID PAY getFullWalletAndroid" + details.getMap("total").getMap("amount"));
 
         FullWalletRequest fullWalletRequest = FullWalletRequest.newBuilder()
                 .setGoogleTransactionId(googleTransactionId)
@@ -256,21 +316,25 @@ public class ReactNativePaymentsModule extends ReactContextBaseJavaModule implem
 
         if (tokenizationType.equals("GATEWAY_TOKEN")) {
             ReadableMap parameters = tokenizationParameters.getMap("parameters");
-            PaymentMethodTokenizationParameters.Builder parametersBuilder = PaymentMethodTokenizationParameters.newBuilder()
-                    .setPaymentMethodTokenizationType(PaymentMethodTokenizationType.PAYMENT_GATEWAY)
-                    .addParameter("gateway", parameters.getString("gateway"));
+            PaymentMethodTokenizationParameters.Builder parametersBuilder =
+                    PaymentMethodTokenizationParameters.newBuilder()
+                            .setPaymentMethodTokenizationType(
+                                    WalletConstants.PAYMENT_METHOD_TOKENIZATION_TYPE_PAYMENT_GATEWAY)
+                            .addParameter("gateway", parameters.getString("gateway"));
 
             ReadableMapKeySetIterator iterator = parameters.keySetIterator();
 
             while (iterator.hasNextKey()) {
                 String key = iterator.nextKey();
-
                 parametersBuilder.addParameter(key, parameters.getString(key));
             }
 
             return parametersBuilder.build();
 
-        } else {
+        }
+        // FIX ME: It is deprecated and is not required for World pay integration.
+        // We should use WalletConstants.PAYMENT_METHOD_TOKENIZATION_TYPE_DIRECT
+        else {
             String publicKey = tokenizationParameters.getMap("parameters").getString("publicKey");
 
             return PaymentMethodTokenizationParameters.newBuilder()
@@ -297,7 +361,7 @@ public class ReactNativePaymentsModule extends ReactContextBaseJavaModule implem
                     .build());
         }
 
-        Log.i(REACT_CLASS, "ANDROID PAY getFullWalletAndroid" + list);
+       // Log.i(REACT_CLASS, "ANDROID PAY getFullWalletAndroid" + list);
 
         return list;
     }
@@ -359,13 +423,13 @@ public class ReactNativePaymentsModule extends ReactContextBaseJavaModule implem
     @Override
     public void onConnectionFailed(ConnectionResult result) {
         // Refer to Google Play documentation for what errors can be logged
-        Log.i(REACT_CLASS, "Connection failed: ConnectionResult.getErrorCode() = " + result.getErrorCode());
+      //  Log.i(REACT_CLASS, "Connection failed: ConnectionResult.getErrorCode() = " + result.getErrorCode());
     }
 
     @Override
     public void onConnectionSuspended(int cause) {
         // Attempts to reconnect if a disconnect occurs
-        Log.i(REACT_CLASS, "Connection suspended");
+      //  Log.i(REACT_CLASS, "Connection suspended");
         mGoogleApiClient.connect();
     }
 }

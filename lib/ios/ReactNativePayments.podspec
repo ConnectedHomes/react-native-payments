@@ -1,22 +1,17 @@
-require "json"
-
-package = JSON.parse(File.read(File.join(__dir__, "../../package.json")))
-version = package["version"]
-giturl = package["repository"]
-
 Pod::Spec.new do |s|
   s.name         = "ReactNativePayments"
-  s.version      = version
-  s.summary      = "react-native-payments"
+  s.version      = "1.0.0"
+  s.summary      = "ReactNativePayments"
   s.description  = <<-DESC
-                  Native Payments (Google and Apple Pay) from React-Native
+                  ReactNativePayments
                    DESC
-  s.homepage     = giturl
+  s.homepage     = ""
   s.license      = "MIT"
-  s.author       = "Naoufal Kadhom"
+  # s.license      = { :type => "MIT", :file => "FILE_LICENSE" }
+  s.author             = { "author" => "author@domain.cn" }
   s.platform     = :ios, "7.0"
-  s.source       = { :git => giturl + ".git", :tag => version }
-  s.source_files  = "*.{h,m}"
+  s.source       = { :git => "https://github.com/author/ReactNativePayments.git", :tag => "master" }
+  s.source_files  = "ReactNativePayments/**/*.{h,m}"
   s.requires_arc = true
 
 
@@ -24,3 +19,5 @@ Pod::Spec.new do |s|
   #s.dependency "others"
 
 end
+
+  
