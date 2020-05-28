@@ -3,12 +3,12 @@ Pod::Spec.new do |s|
   s.version      = "1.0.0"
   s.summary      = "ReactNativePayments"
   s.description  = "ReactNativePayments"
-  s.homepage     = "https://github.com/ConnectedHomes/react-native-payments/tree/upgrade-0.62.0-check"
+  s.homepage     = "https://github.com/ConnectedHomes/react-native-payments/tree/upgrade-0.62.0"
   s.license      = "MIT"
   # s.license      = { :type => "MIT", :file => "FILE_LICENSE" }
   s.author             = { "author" => "author@domain.cn" }
   s.platform     = :ios, "9.0"
-  s.source       = { :git => "https://github.com/author/ReactNativePayments.git", :tag => "v#{s.version}" }
+  s.source       = { :git => "https://github.com/ConnectedHomes/react-native-payments/tree/upgrade-0.62.0", :tag => "v#{s.version}" }
   s.source_files  = "ReactNativePayments/**/*.{h,m}"
   s.requires_arc = true
 
