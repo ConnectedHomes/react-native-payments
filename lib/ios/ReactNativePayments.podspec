@@ -9,7 +9,7 @@ Pod::Spec.new do |s|
   s.author             = { "author" => "author@domain.cn" }
   s.platform     = :ios, "9.0"
   s.source       = { :git => "https://github.com/ConnectedHomes/react-native-payments/tree/upgrade-0.62.0", :tag => "v#{s.version}" }
-  s.source_files  = "ReactNativePayments/**/*.{h,m}"
+  s.source_files  = "lib/ios/*.{h,m}"
   s.requires_arc = true
 
 
