@@ -239,7 +239,7 @@ public class ReactNativePaymentsModule extends ReactContextBaseJavaModule implem
                                         .setCurrencyCode(total.getString("currency"))
                                         .build())
                         .addAllowedPaymentMethod(WalletConstants.PAYMENT_METHOD_CARD)
-                    //    .addAllowedPaymentMethod(WalletConstants.PAYMENT_METHOD_TOKENIZED_CARD)
+                        .addAllowedPaymentMethod(WalletConstants.PAYMENT_METHOD_TOKENIZED_CARD)
                         .setCardRequirements(
                                 CardRequirements.newBuilder()
                                         .addAllowedCardNetworks(
